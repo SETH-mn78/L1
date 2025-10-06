@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบเช็คชื่อออนไลน์ (ไฟล์เดียว)</title>
+    <style>
+        /* CSS สำหรับจัดรูปแบบพื้นฐาน */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h2 {
+            text-align: center;
+            color: #333;
+        }
+        input[type="text"], input[type="password"], button {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0;
+            display: inline-block;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #admin-view table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        #admin-view th, #admin-view td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .error {
+            color: red;
+            text-align: center;
+        }
+        .success {
+            color: green;
+            text-align: center;
+        }
+        /* ซ่อนทุกหน้าเริ่มต้น */
+        #login-page, #checkin-page, #admin-page {
+            display: none;
+        }
+        .nav-link {
+            display: block;
+            margin-top: 10px;
+            text-align: center;
+            color: #007bff;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="login-page">
+            <h2>เข้าระบบเช็คชื่อ</h2>
+            <div id="login-error" class="error"></div>
+            <form id="login-form">
+                <label for="username">รหัสพนักงาน/นักเรียน:</label>
+                <input type="text" id="username" required>
+                <label for="password">รหัสผ่าน (ใช้แค่ 1234 สำหรับ Admin):</label>
+                <input type="password" id="password" required>
+                <button type="submit">เข้าสู่ระบบ</button>
+            </form>
+            <a href="#checkin" class="nav-link">>> ไปหน้าเช็คชื่อ (สำหรับผู้ที่ไม่ต้องล็อกอิน)</a>
+        </div>
+
+        <div id="checkin-page">
+            <h2>เช็คชื่อเข้างาน/เข้าเรียน</h2>
+            <div id="checkin-message" class="success"></div>
+            <form id="checkin-form">
+                <label for="cid">รหัสผู้เช็คชื่อ:</label>
+                <input type="text" id="cid" required>
+                <label for="cname">ชื่อ-นามสกุล:</label>
+                <input type="text" id="cname" required>
+                <button type="submit">บันทึกการเช็คชื่อ</button>
+            </form>
+            <a href="#login" class="nav-link"><< กลับหน้าเข้าระบบ</a>
+        </div>
+
+        <div id="admin-page">
+            <h2>หน้าจัดการและดูรายชื่อ</h2>
+            <div id="admin-view">
+                </div>
+            <button onclick="logout()" style="background-color: #dc3545;">ออกจากระบบ</button>
+        </div>
+    </div>
+
+    <script>
+        // ข้อมูลเริ่มต้นสำหรับจำลองผู้ใช้ (User) และเจ้าหน้าที่ (Admin)
+        const USERS = {
+            'std001': 'pass123', // ผู้ใช้ทั่วไป
+            'admin': '1234'      // เจ้าหน้าที่
+        };
+
+        // เก็บข้อมูลการเช็คชื่อใน LocalStorage
+        function getAttendanceData() {
+            const data = localStorage.getItem('attendanceData');
+            return data ? JSON.parse(data) : [];
+        }
+
+        function saveAttendanceData(data) {
+            localStorage.setItem('attendanceData', JSON.stringify(data));
+        }
+
+        // --- Routing (การเปลี่ยนหน้า) ---
+
+        function router() {
+            const route = window.location.hash.substring(1) || 'login';
+            const allPages = ['login-page', 'checkin-page', 'admin-page'];
+            allPages.forEach(id => {
+                document.getElementById(id).style.display = 'none';
+            });
+
+            // ตรวจสอบสิทธิ์สำหรับหน้า Admin
+            if (route === 'admin') {
+                if (localStorage.getItem('isAdminLoggedIn') !== 'true') {
+                    window.location.hash = 'login';
+                    document.getElementById('login-error').innerText = 'กรุณาเข้าระบบ Admin ก่อน';
+                    document.getElementById('login-page').style.display = 'block';
+                    return;
+                }
+                renderAdmin();
+                document.getElementById('admin-page').style.display = 'block';
+            } else if (route === 'checkin') {
+                document.getElementById('checkin-page').style.display = 'block';
+            } else { // 'login'
+                // ล้างสถานะ Admin หากเข้าหน้า Login
+                localStorage.removeItem('isAdminLoggedIn');
+                document.getElementById('login-page').style.display = 'block';
+            }
+        }
+
+        window.addEventListener('hashchange', router);
+        window.addEventListener('load', router);
+
+        // --- 1. หน้าแรก: เข้าระบบเช็คชื่อ (Login Logic) ---
+
+        document.getElementById('login-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorDiv = document.getElementById('login-error');
+            errorDiv.innerText = '';
+
+            if (USERS[username] === password) {
+                if (username === 'admin') {
+                    localStorage.setItem('isAdminLoggedIn', 'true');
+                    window.location.hash = 'admin'; // ไปหน้า Admin
+                } else {
+                    alert('เข้าสู่ระบบสำเร็จ! แต่คุณไม่ใช่ Admin จึงถูกส่งไปหน้าเช็คชื่อ');
+                    window.location.hash = 'checkin'; // ไปหน้าเช็คชื่อ
+                }
+            } else {
+                errorDiv.innerText = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง!';
+            }
+        });
+        
+        // --- 2. หน้าสอง: เช็คชื่อ (Check-in Logic) ---
+
+        document.getElementById('checkin-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const cid = document.getElementById('cid').value.trim();
+            const cname = document.getElementById('cname').value.trim();
+            const msgDiv = document.getElementById('checkin-message');
+            msgDiv.innerText = '';
+            
+            if (!cid || !cname) {
+                msgDiv.className = 'error';
+                msgDiv.innerText = 'กรุณากรอกข้อมูลให้ครบถ้วน';
+                return;
+            }
+
+            const attendance = getAttendanceData();
+            const now = new Date();
+            
+            // บันทึกข้อมูลใหม่
+            attendance.push({
+                id: cid,
+                name: cname,
+                timestamp: now.toLocaleString('th-TH'),
+                date: now.toLocaleDateString('th-TH')
+            });
+
+            saveAttendanceData(attendance);
+            
+            // แสดงผลสำเร็จ
+            msgDiv.className = 'success';
+            msgDiv.innerText = `เช็คชื่อสำเร็จ: ${cname} เมื่อ ${now.toLocaleTimeString('th-TH')}`;
+
+            // ล้างฟอร์ม
+            document.getElementById('checkin-form').reset();
+        });
+
+        // --- 3. หน้าสาม: สำหรับเจ้าหน้าที่ดูรายชื่อ (Admin Logic) ---
+
+        function renderAdmin() {
+            const attendance = getAttendanceData();
+            const adminView = document.getElementById('admin-view');
+            
+            if (attendance.length === 0) {
+                adminView.innerHTML = '<p>ยังไม่มีข้อมูลการเช็คชื่อ</p>';
+                return;
+            }
+
+            let tableHTML = '<table>';
+            tableHTML += '<thead><tr><th>รหัส</th><th>ชื่อ-นามสกุล</th><th>วัน/เดือน/ปี</th><th>เวลา</th></tr></thead>';
+            tableHTML += '<tbody>';
+
+            attendance.forEach(item => {
+                tableHTML += `<tr>
+                    <td>${item.id}</td>
+                    <td>${item.name}</td>
+                    <td>${item.date}</td>
+                    <td>${item.timestamp.split(' ')[1]}</td>
+                </tr>`;
+            });
+
+            tableHTML += '</tbody></table>';
+            adminView.innerHTML = tableHTML;
+        }
+
+        function logout() {
+            localStorage.removeItem('isAdminLoggedIn');
+            alert('ออกจากระบบสำเร็จ');
+            window.location.hash = 'login';
+        }
+
+    </script>
+</body>
+</html>
